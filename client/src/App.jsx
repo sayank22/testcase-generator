@@ -1,12 +1,14 @@
-import { useState } from 'react'
+// client/src/App.jsx
+import React from 'react';
+import TestCaseGenerator from './components/TestCaseGenerator';
+import './App.css';
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-    </>
-  )
+    <div className="App">
+      <TestCaseGenerator />
+    </div>
+  );
 }
 
-export default App
+export default App;
