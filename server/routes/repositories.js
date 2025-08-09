@@ -1,17 +1,18 @@
 // server/routes/repositories.js
-const express = require('express');
-const { getLanguageFromExtension } = require('../utils/helpers');
+import express from 'express';
+import { getLanguageFromExtension } from '../utils/helpers.js';
+
 const router = express.Router();
 
 // Middleware to check authentication
 const authenticateToken = (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   const client = global.clients.get(token);
-  
+
   if (!client) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   req.client = client;
   next();
 };
@@ -68,24 +69,24 @@ router.get('/:owner/:repo/files', authenticateToken, async (req, res) => {
     // Filter for code files only
     const codeExtensions = ['.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.cpp', '.c', '.cs', '.php', '.rb', '.go', '.vue', '.svelte'];
     const excludePaths = ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__', '.venv', 'vendor'];
-    
+
     const codeFiles = tree.tree
       .filter(item => {
         if (item.type !== 'blob') return false;
-        
+
         // Check if file has a code extension
         const hasCodeExtension = codeExtensions.some(ext => item.path.endsWith(ext));
         if (!hasCodeExtension) return false;
-        
+
         // Exclude common build/dependency directories
         const isExcluded = excludePaths.some(excludePath => 
           item.path.includes(excludePath)
         );
         if (isExcluded) return false;
-        
+
         // Exclude test files for now (we're generating tests)
         if (item.path.includes('.test.') || item.path.includes('.spec.')) return false;
-        
+
         return true;
       })
       .map(file => ({
@@ -108,7 +109,7 @@ router.get('/:owner/:repo/files', authenticateToken, async (req, res) => {
 });
 
 // Get specific file content
-router.get('/:owner/:repo/files/*', authenticateToken, async (req, res) => {
+router.get('/:owner/:repo/files/:path(*)', authenticateToken, async (req, res) => {
   try {
     const { owner, repo } = req.params;
     const path = req.params[0]; // Get the full path after /files/
@@ -124,5 +125,15 @@ router.get('/:owner/:repo/files/*', authenticateToken, async (req, res) => {
     }
 
     const content = Buffer.from(file.content, 'base64').toString('utf-8');
-    
-    res.json(
+
+    res.json({ path, content });
+  } catch (error) {
+    console.error('Error fetching file content:', error);
+    res.status(500).json({
+      error: 'Failed to fetch file content',
+      message: error.message
+    });
+  }
+});
+
+export default router;

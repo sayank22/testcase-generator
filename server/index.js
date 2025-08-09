@@ -1,13 +1,15 @@
 // server/index.js
-const express = require('express');
-const cors = require('cors');
-const { Octokit } = require('@octokit/rest');
-require('dotenv').config();
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import { Octokit } from '@octokit/rest';
 
-// Import routes
-const authRoutes = require('./routes/auth');
-const repositoryRoutes = require('./routes/repositories');
-const generateRoutes = require('./routes/generate');
+// Import routes (make sure these files use .js extensions and ESM exports)
+import authRoutes from './routes/auth.js';
+import repositoryRoutes from './routes/repositories.js';
+import generateRoutes from './routes/generate.js';
+
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -20,7 +22,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Store authenticated clients (in production, use Redis or proper session management)
+// Store authenticated clients (for production, replace with Redis or DB)
 global.clients = new Map();
 
 // Health check endpoint
@@ -33,20 +35,21 @@ app.use('/api/auth', authRoutes);
 app.use('/api/repositories', repositoryRoutes);
 app.use('/api/generate', generateRoutes);
 
-// Error handling middleware
+// 404 handler — must come before error handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// Error handling middleware — last middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
+  res.status(500).json({
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
-
+// Start server
 app.listen(port, () => {
   console.log(`🚀 Test Case Generator Server running on port ${port}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);

@@ -1,4 +1,6 @@
 // server/services/aiService.js
+import { OpenAI } from 'openai';
+
 class AIService {
   constructor() {
     this.openai = null;
@@ -7,9 +9,7 @@ class AIService {
 
   initializeOpenAI() {
     try {
-      // Only initialize if OpenAI API key is provided
       if (process.env.OPENAI_API_KEY) {
-        const { OpenAI } = require('openai');
         this.openai = new OpenAI({
           apiKey: process.env.OPENAI_API_KEY
         });
@@ -28,7 +28,7 @@ class AIService {
     }
 
     const files = fileContents.map(f => `${f.path} (${f.language})`).join(', ');
-    
+
     const prompt = `Analyze the following ${primaryLanguage} code files and generate 3-4 test case summaries:
 
 Files: ${files}
@@ -115,4 +115,4 @@ Generate complete test file with proper structure for ${language}.`;
   }
 }
 
-module.exports = new AIService();
+export default new AIService();

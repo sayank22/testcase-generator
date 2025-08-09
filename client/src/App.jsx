@@ -1,7 +1,6 @@
 // client/src/App.jsx
 import React from 'react';
 import TestCaseGenerator from './components/TestCaseGenerator';
-import './App.css';
 
 function App() {
   return (
