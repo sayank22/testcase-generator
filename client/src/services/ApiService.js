@@ -7,23 +7,22 @@ class ApiService {
   constructor() {
     this.api = axios.create({
       baseURL: API_BASE_URL,
-      timeout: 30000, // 30 seconds timeout
+      timeout: 30000,
+      withCredentials: true, // important for cookies/sessions if used
     });
-    
-    // Get token from localStorage if it exists
+
     this.token = localStorage.getItem('github_token');
     if (this.token) {
       this.setAuthHeader(this.token);
     }
 
-    // Add response interceptor for error handling
     this.api.interceptors.response.use(
       (response) => response,
       (error) => {
         console.error('API Error:', error);
         if (error.response?.status === 401) {
           this.removeAuthHeader();
-          window.location.reload();
+          window.location.href = '/login'; // redirect to login page
         }
         throw error;
       }
@@ -42,91 +41,62 @@ class ApiService {
     this.token = null;
   }
 
-  async authenticateGitHub(token) {
+  /**
+   * Step 2 of OAuth: Exchange GitHub "code" for access token via backend
+   */
+  async exchangeCodeForToken(code) {
     try {
-      const response = await this.api.post('/auth/github', { token });
-      if (response.data.success) {
+      const response = await this.api.get(`/auth/github/callback?code=${code}`);
+      const { token } = response.data;
+      if (token) {
         this.setAuthHeader(token);
       }
       return response.data;
     } catch (error) {
-      throw new Error(error.response?.data?.error || 'Authentication failed');
+      throw new Error(error.response?.data?.error || 'GitHub OAuth exchange failed');
     }
   }
 
   async getRepositories() {
-    try {
-      const response = await this.api.get('/repositories');
-      return response.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.error || 'Failed to fetch repositories');
-    }
+    const { data } = await this.api.get('/repositories');
+    return data;
   }
 
   async getRepositoryFiles(owner, repo) {
-    try {
-      const response = await this.api.get(`/repositories/${owner}/${repo}/files`);
-      return response.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.error || 'Failed to fetch repository files');
-    }
+    const { data } = await this.api.get(`/repositories/${owner}/${repo}/files`);
+    return data;
   }
 
   async getFileContent(owner, repo, path) {
-    try {
-      const response = await this.api.get(`/repositories/${owner}/${repo}/files/${path}`);
-      return response.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.error || 'Failed to fetch file content');
-    }
+    const { data } = await this.api.get(`/repositories/${owner}/${repo}/files/${path}`);
+    return data;
   }
 
   async generateTestSummaries(files, repository) {
-    try {
-      const response = await this.api.post('/generate/summaries', { 
-        files, 
-        repository 
-      });
-      return response.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.error || 'Failed to generate test summaries');
-    }
+    const { data } = await this.api.post('/generate/summaries', { files, repository });
+    return data;
   }
 
   async generateTestCode(summary, files, repository) {
-    try {
-      const response = await this.api.post('/generate/code', { 
-        summary, 
-        files, 
-        repository 
-      });
-      return response.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.error || 'Failed to generate test code');
-    }
+    const { data } = await this.api.post('/generate/code', { summary, files, repository });
+    return data;
   }
 
   async createPullRequest(repository, testCode, filename, title, description) {
-    try {
-      const response = await this.api.post('/create-pr', {
-        repository,
-        testCode,
-        filename,
-        title,
-        description
-      });
-      return response.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.error || 'Failed to create pull request');
-    }
+    const { data } = await this.api.post('/create-pr', {
+      repository,
+      testCode,
+      filename,
+      title,
+      description
+    });
+    return data;
   }
 
-  // Utility method to check if user is authenticated
   isAuthenticated() {
     return !!this.token;
   }
 
-  // Utility method to get current token
   getToken() {
     return this.token;
   }

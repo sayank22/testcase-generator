@@ -1,138 +1,194 @@
 // server/routes/repositories.js
 import express from 'express';
-import { getLanguageFromExtension } from '../utils/helpers.js';
+import { Buffer } from 'buffer';
+import aiService from '../services/aiService.js';
 
 const router = express.Router();
 
-// Middleware to check authentication
-const authenticateToken = (req, res, next) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  const client = global.clients.get(token);
+// ✅ Helper to get authenticated Octokit from sessionId
+function getClientFromSession(req) {
+  const sessionId = req.headers.authorization?.replace('Bearer ', '');
+  return global.clients.get(sessionId);
+}
 
-  if (!client) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  req.client = client;
-  next();
-};
-
-// Get user repositories
-router.get('/', authenticateToken, async (req, res) => {
+// ✅ List code files in a GitHub repo
+router.get('/:owner/:repo/files', async (req, res) => {
   try {
-    const { data: repos } = await req.client.octokit.rest.repos.listForAuthenticatedUser({
-      sort: 'updated',
-      per_page: 50,
-      type: 'owner'
-    });
-
-    const formattedRepos = repos.map(repo => ({
-      id: repo.id,
-      name: repo.name,
-      full_name: repo.full_name,
-      language: repo.language,
-      private: repo.private,
-      html_url: repo.html_url,
-      updated_at: repo.updated_at,
-      description: repo.description
-    }));
-
-    res.json(formattedRepos);
-  } catch (error) {
-    console.error('Error fetching repositories:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch repositories',
-      message: error.message 
-    });
-  }
-});
-
-// Get repository files
-router.get('/:owner/:repo/files', authenticateToken, async (req, res) => {
-  try {
-    const { owner, repo } = req.params;
-
-    // Get repository info first
-    const { data: repoInfo } = await req.client.octokit.rest.repos.get({
-      owner,
-      repo
-    });
-
-    // Get file tree
-    const { data: tree } = await req.client.octokit.rest.git.getTree({
-      owner,
-      repo,
-      tree_sha: repoInfo.default_branch,
-      recursive: true
-    });
-
-    // Filter for code files only
-    const codeExtensions = ['.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.cpp', '.c', '.cs', '.php', '.rb', '.go', '.vue', '.svelte'];
-    const excludePaths = ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '__pycache__', '.venv', 'vendor'];
-
-    const codeFiles = tree.tree
-      .filter(item => {
-        if (item.type !== 'blob') return false;
-
-        // Check if file has a code extension
-        const hasCodeExtension = codeExtensions.some(ext => item.path.endsWith(ext));
-        if (!hasCodeExtension) return false;
-
-        // Exclude common build/dependency directories
-        const isExcluded = excludePaths.some(excludePath => 
-          item.path.includes(excludePath)
-        );
-        if (isExcluded) return false;
-
-        // Exclude test files for now (we're generating tests)
-        if (item.path.includes('.test.') || item.path.includes('.spec.')) return false;
-
-        return true;
-      })
-      .map(file => ({
-        path: file.path,
-        type: file.type,
-        sha: file.sha,
-        language: getLanguageFromExtension(file.path),
-        size: file.size
-      }))
-      .sort((a, b) => a.path.localeCompare(b.path));
-
-    res.json(codeFiles);
-  } catch (error) {
-    console.error('Error fetching files:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch repository files',
-      message: error.message 
-    });
-  }
-});
-
-// Get specific file content
-router.get('/:owner/:repo/files/:path(*)', authenticateToken, async (req, res) => {
-  try {
-    const { owner, repo } = req.params;
-    const path = req.params[0]; // Get the full path after /files/
-
-    const { data: file } = await req.client.octokit.rest.repos.getContent({
-      owner,
-      repo,
-      path
-    });
-
-    if (file.type !== 'file') {
-      return res.status(400).json({ error: 'Path is not a file' });
+    const client = getClientFromSession(req);
+    if (!client) {
+      return res.status(401).json({ error: 'GitHub authentication required' });
     }
 
-    const content = Buffer.from(file.content, 'base64').toString('utf-8');
+    const { owner, repo } = req.params;
 
-    res.json({ path, content });
-  } catch (error) {
-    console.error('Error fetching file content:', error);
-    res.status(500).json({
-      error: 'Failed to fetch file content',
-      message: error.message
+    // Get repository tree recursively from main branch
+    const { data: refData } = await client.octokit.git.getRef({
+      owner,
+      repo,
+      ref: 'heads/main' // adjust if default branch differs
     });
+
+    const { data: treeData } = await client.octokit.git.getTree({
+      owner,
+      repo,
+      tree_sha: refData.object.sha,
+      recursive: 'true'
+    });
+
+    // Filter code files (common extensions)
+    const codeFiles = treeData.tree
+      .filter(item =>
+        item.type === 'blob' &&
+        /\.(js|jsx|ts|tsx|py|java|go|rb|php)$/i.test(item.path)
+      )
+      .map(file => ({
+        path: file.path,
+        sha: file.sha
+      }));
+
+    res.json(codeFiles);
+
+  } catch (error) {
+    console.error('Error listing repo files:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ Generate test summaries for selected files
+router.post('/generate-summaries', async (req, res) => {
+  try {
+    const client = getClientFromSession(req);
+    if (!client) {
+      return res.status(401).json({ error: 'GitHub authentication required' });
+    }
+
+    const { owner, repo, files } = req.body;
+
+    // Fetch file contents
+    const fileContents = [];
+    for (const file of files) {
+      const { data: fileData } = await client.octokit.repos.getContent({
+        owner,
+        repo,
+        path: file
+      });
+
+      const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
+      fileContents.push({
+        path: file,
+        language: file.split('.').pop(),
+        content
+      });
+    }
+
+    // Detect primary repo language
+    const { data: repoData } = await client.octokit.repos.get({ owner, repo });
+    const primaryLanguage = repoData.language || 'JavaScript';
+
+    // Generate summaries
+    const summaries = await aiService.generateTestSummaries(fileContents, primaryLanguage);
+
+    res.json({ summaries: JSON.parse(summaries) });
+
+  } catch (error) {
+    console.error('Error generating summaries:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ Generate test code for a selected summary
+router.post('/generate-code', async (req, res) => {
+  try {
+    const client = getClientFromSession(req);
+    if (!client) {
+      return res.status(401).json({ error: 'GitHub authentication required' });
+    }
+
+    const { owner, repo, summary, files } = req.body;
+
+    // Fetch file contents
+    const fileContents = [];
+    for (const file of files) {
+      const { data: fileData } = await client.octokit.repos.getContent({
+        owner,
+        repo,
+        path: file
+      });
+
+      const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
+      fileContents.push({
+        path: file,
+        language: file.split('.').pop(),
+        content
+      });
+    }
+
+    // Detect primary repo language
+    const { data: repoData } = await client.octokit.repos.get({ owner, repo });
+    const language = repoData.language || 'JavaScript';
+
+    // Generate test code
+    const testCode = await aiService.generateTestCode(summary, fileContents, language);
+
+    res.json({ code: testCode });
+
+  } catch (error) {
+    console.error('Error generating test code:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ Create PR with generated test file(s)
+router.post('/create-pr', async (req, res) => {
+  try {
+    const client = getClientFromSession(req);
+    if (!client) {
+      return res.status(401).json({ error: 'GitHub authentication required' });
+    }
+
+    const { owner, repo, branch = 'main', filePath, code } = req.body;
+    const newBranch = `testcases/${Date.now()}`;
+
+    // Get latest commit SHA of target branch
+    const { data: refData } = await client.octokit.git.getRef({
+      owner,
+      repo,
+      ref: `heads/${branch}`
+    });
+
+    // Create new branch
+    await client.octokit.git.createRef({
+      owner,
+      repo,
+      ref: `refs/heads/${newBranch}`,
+      sha: refData.object.sha
+    });
+
+    // Commit the test file
+    await client.octokit.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path: filePath,
+      message: 'Add AI-generated test cases',
+      content: Buffer.from(code).toString('base64'),
+      branch: newBranch
+    });
+
+    // Create PR
+    const { data: pr } = await client.octokit.pulls.create({
+      owner,
+      repo,
+      title: 'AI-generated test cases',
+      head: newBranch,
+      base: branch,
+      body: 'This PR adds AI-generated test cases.'
+    });
+
+    res.json({ success: true, prUrl: pr.html_url });
+
+  } catch (error) {
+    console.error('Error creating PR:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
