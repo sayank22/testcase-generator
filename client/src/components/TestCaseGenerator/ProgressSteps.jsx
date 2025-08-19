@@ -1,4 +1,4 @@
-/ components/TestCaseGenerator/ProgressSteps.jsx
+// components/TestCaseGenerator/ProgressSteps.jsx
 import React from 'react';
 import { CheckSquare } from 'lucide-react';
 
