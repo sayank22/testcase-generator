@@ -11,21 +11,55 @@ function getClientFromSession(req) {
   return global.clients.get(sessionId);
 }
 
-// ✅ List code files in a GitHub repo
-router.get('/:owner/:repo/files', async (req, res) => {
+// ✅ 1. List authenticated user's repositories
+router.get('/', async (req, res) => {
   try {
     const client = getClientFromSession(req);
     if (!client) {
       return res.status(401).json({ error: 'GitHub authentication required' });
     }
 
+    const { data: repos } = await client.octokit.repos.listForAuthenticatedUser({
+      visibility: 'all',
+      affiliation: 'owner,collaborator',
+      per_page: 100
+    });
+
+    // Keep GitHub field names so frontend works directly
+    const formatted = repos.map(r => ({
+      id: r.id,
+      name: r.name,
+      full_name: r.full_name,   // 👈 frontend expects this
+      private: r.private,
+      language: r.language,
+      default_branch: r.default_branch,
+      html_url: r.html_url,
+      owner: { login: r.owner.login } // 👈 for clarity
+    }));
+
+    res.json(formatted);
+  } catch (error) {
+    console.error('Error fetching repositories:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ✅ 2. List code files in a repo
+router.get('/:owner/:repo/files', async (req, res) => {
+  try {
+    const client = getClientFromSession(req);
+    if (!client) return res.status(401).json({ error: 'GitHub authentication required' });
+
     const { owner, repo } = req.params;
 
-    // Get repository tree recursively from main branch
+    // Get repo default branch dynamically
+    const { data: repoData } = await client.octokit.repos.get({ owner, repo });
+    const branch = repoData.default_branch;
+
     const { data: refData } = await client.octokit.git.getRef({
       owner,
       repo,
-      ref: 'heads/main' // adjust if default branch differs
+      ref: `heads/${branch}`
     });
 
     const { data: treeData } = await client.octokit.git.getTree({
@@ -35,16 +69,12 @@ router.get('/:owner/:repo/files', async (req, res) => {
       recursive: 'true'
     });
 
-    // Filter code files (common extensions)
     const codeFiles = treeData.tree
       .filter(item =>
         item.type === 'blob' &&
         /\.(js|jsx|ts|tsx|py|java|go|rb|php)$/i.test(item.path)
       )
-      .map(file => ({
-        path: file.path,
-        sha: file.sha
-      }));
+      .map(file => ({ path: file.path, sha: file.sha }));
 
     res.json(codeFiles);
 
@@ -54,109 +84,83 @@ router.get('/:owner/:repo/files', async (req, res) => {
   }
 });
 
-// ✅ Generate test summaries for selected files
+// ✅ 3. Generate test summaries
 router.post('/generate-summaries', async (req, res) => {
   try {
     const client = getClientFromSession(req);
-    if (!client) {
-      return res.status(401).json({ error: 'GitHub authentication required' });
-    }
+    if (!client) return res.status(401).json({ error: 'GitHub authentication required' });
 
     const { owner, repo, files } = req.body;
 
-    // Fetch file contents
     const fileContents = [];
     for (const file of files) {
-      const { data: fileData } = await client.octokit.repos.getContent({
-        owner,
-        repo,
-        path: file
-      });
-
+      const { data: fileData } = await client.octokit.repos.getContent({ owner, repo, path: file });
       const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
-      fileContents.push({
-        path: file,
-        language: file.split('.').pop(),
-        content
-      });
+      fileContents.push({ path: file, language: file.split('.').pop(), content });
     }
 
-    // Detect primary repo language
     const { data: repoData } = await client.octokit.repos.get({ owner, repo });
     const primaryLanguage = repoData.language || 'JavaScript';
 
-    // Generate summaries
-    const summaries = await aiService.generateTestSummaries(fileContents, primaryLanguage);
+    const rawSummaries = await aiService.generateTestSummaries(fileContents, primaryLanguage);
 
-    res.json({ summaries: JSON.parse(summaries) });
+    // 🧹 Clean up AI output before parsing
+    let cleanText = rawSummaries.trim();
+    cleanText = cleanText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
+    let summaries;
+    try {
+      summaries = JSON.parse(cleanText);
+    } catch (err) {
+      console.error("⚠️ Could not parse AI response as JSON", err);
+      summaries = [{ error: "Invalid AI response", raw: cleanText }];
+    }
+
+    res.json({ summaries });
   } catch (error) {
     console.error('Error generating summaries:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// ✅ Generate test code for a selected summary
+// ✅ 4. Generate test code
 router.post('/generate-code', async (req, res) => {
   try {
     const client = getClientFromSession(req);
-    if (!client) {
-      return res.status(401).json({ error: 'GitHub authentication required' });
-    }
+    if (!client) return res.status(401).json({ error: 'GitHub authentication required' });
 
     const { owner, repo, summary, files } = req.body;
 
-    // Fetch file contents
     const fileContents = [];
     for (const file of files) {
-      const { data: fileData } = await client.octokit.repos.getContent({
-        owner,
-        repo,
-        path: file
-      });
-
+      const { data: fileData } = await client.octokit.repos.getContent({ owner, repo, path: file });
       const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
-      fileContents.push({
-        path: file,
-        language: file.split('.').pop(),
-        content
-      });
+      fileContents.push({ path: file, language: file.split('.').pop(), content });
     }
 
-    // Detect primary repo language
     const { data: repoData } = await client.octokit.repos.get({ owner, repo });
     const language = repoData.language || 'JavaScript';
 
-    // Generate test code
     const testCode = await aiService.generateTestCode(summary, fileContents, language);
 
     res.json({ code: testCode });
-
   } catch (error) {
     console.error('Error generating test code:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// ✅ Create PR with generated test file(s)
+// ✅ 5. Create PR
 router.post('/create-pr', async (req, res) => {
   try {
     const client = getClientFromSession(req);
-    if (!client) {
-      return res.status(401).json({ error: 'GitHub authentication required' });
-    }
+    if (!client) return res.status(401).json({ error: 'GitHub authentication required' });
 
     const { owner, repo, branch = 'main', filePath, code } = req.body;
     const newBranch = `testcases/${Date.now()}`;
 
-    // Get latest commit SHA of target branch
-    const { data: refData } = await client.octokit.git.getRef({
-      owner,
-      repo,
-      ref: `heads/${branch}`
-    });
+    const { data: refData } = await client.octokit.git.getRef({ owner, repo, ref: `heads/${branch}` });
 
-    // Create new branch
     await client.octokit.git.createRef({
       owner,
       repo,
@@ -164,7 +168,6 @@ router.post('/create-pr', async (req, res) => {
       sha: refData.object.sha
     });
 
-    // Commit the test file
     await client.octokit.repos.createOrUpdateFileContents({
       owner,
       repo,
@@ -174,7 +177,6 @@ router.post('/create-pr', async (req, res) => {
       branch: newBranch
     });
 
-    // Create PR
     const { data: pr } = await client.octokit.pulls.create({
       owner,
       repo,
@@ -185,7 +187,6 @@ router.post('/create-pr', async (req, res) => {
     });
 
     res.json({ success: true, prUrl: pr.html_url });
-
   } catch (error) {
     console.error('Error creating PR:', error);
     res.status(500).json({ error: error.message });

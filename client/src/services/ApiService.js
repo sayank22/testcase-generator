@@ -8,7 +8,7 @@ class ApiService {
     this.api = axios.create({
       baseURL: API_BASE_URL,
       timeout: 30000,
-      withCredentials: true, // important for cookies/sessions if used
+      withCredentials: true, // keep cookies/sessions if used
     });
 
     this.token = localStorage.getItem('github_token');
@@ -16,13 +16,14 @@ class ApiService {
       this.setAuthHeader(this.token);
     }
 
+    // Interceptor to handle errors globally
     this.api.interceptors.response.use(
       (response) => response,
       (error) => {
         console.error('API Error:', error);
         if (error.response?.status === 401) {
           this.removeAuthHeader();
-          window.location.href = '/login'; // redirect to login page
+          window.location.href = '/login'; // redirect if unauthorized
         }
         throw error;
       }
@@ -42,7 +43,7 @@ class ApiService {
   }
 
   /**
-   * Step 2 of OAuth: Exchange GitHub "code" for access token via backend
+   * OAuth Step 2: Exchange GitHub "code" for access token
    */
   async exchangeCodeForToken(code) {
     try {
@@ -57,6 +58,7 @@ class ApiService {
     }
   }
 
+  // ✅ All endpoints prefixed with /api
   async getRepositories() {
     const { data } = await this.api.get('/repositories');
     return data;
@@ -68,7 +70,7 @@ class ApiService {
   }
 
   async getFileContent(owner, repo, path) {
-    const { data } = await this.api.get(`/repositories/${owner}/${repo}/files/${path}`);
+    const { data } = await this.api.get(`/repositories/${owner}/${repo}/files/${encodeURIComponent(path)}`);
     return data;
   }
 
@@ -83,12 +85,12 @@ class ApiService {
   }
 
   async createPullRequest(repository, testCode, filename, title, description) {
-    const { data } = await this.api.post('/create-pr', {
+    const { data } = await this.api.post('/pr', {
       repository,
       testCode,
       filename,
       title,
-      description
+      description,
     });
     return data;
   }
