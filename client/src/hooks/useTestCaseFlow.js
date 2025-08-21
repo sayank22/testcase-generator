@@ -1,9 +1,9 @@
-// hooks/useTestCaseFlow.js
+// client/src/hooks/useTestCaseFlow.js - Key improvements only
 import React, { useState, useEffect } from 'react';
 import ApiService from '../services/ApiService';
 
 export const useTestCaseFlow = () => {
-  // State
+  // ✅ Keep all your existing state exactly the same
   const [repositories, setRepositories] = useState([]);
   const [selectedRepo, setSelectedRepo] = useState(null);
   const [files, setFiles] = useState([]);
@@ -16,13 +16,13 @@ export const useTestCaseFlow = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [error, setError] = useState('');
 
-  // Initialize authentication
+  // ✅ Keep your existing useEffect
   useEffect(() => {
     initializeAuth();
   }, []);
 
+  // ✅ Keep your existing initializeAuth - it works fine!
   const initializeAuth = () => {
-    // Check localStorage first
     const localToken = localStorage.getItem('github_token');
     if (localToken) {
       ApiService.setAuthHeader(localToken);
@@ -32,7 +32,6 @@ export const useTestCaseFlow = () => {
       return;
     }
 
-    // Parse query params for sessionId
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get('sessionId') || params.get('token');
 
@@ -42,64 +41,42 @@ export const useTestCaseFlow = () => {
       setCurrentStep(2);
       loadRepositories();
 
-      // Clean up URL
       const cleanUrl = window.location.origin + window.location.pathname;
       window.history.replaceState({}, document.title, cleanUrl);
     }
   };
 
+  // ✅ Enhanced error handling for loadRepositories
   const loadRepositories = async () => {
     try {
       setLoading(true);
-      setError('');
+      setError(''); // Clear previous errors
       const repos = await ApiService.getRepositories();
       setRepositories(repos);
     } catch (err) {
       console.error(err);
-      setError('Failed to load repositories');
+      const errorMsg = err.response?.data?.error || err.message || 'Failed to load repositories';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ Keep your existing startGitHubOAuth
   const startGitHubOAuth = () => {
     const backendBase = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, '') || 'http://localhost:5000';
     window.location.href = `${backendBase}/api/auth/github/start`;
   };
 
-  const handleRepoSelect = async (repo) => {
-    try {
-      setSelectedRepo(repo);
-      setLoading(true);
-      setError('');
-
-      const [owner, repoName] = repo.full_name.split('/');
-      const repoFiles = await ApiService.getRepositoryFiles(owner, repoName);
-
-      setFiles(repoFiles);
-      setCurrentStep(3);
-    } catch (error) {
-      console.error(error);
-      setError('Failed to load repository files');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleFileToggle = (file) => {
-    setSelectedFiles(prev => {
-      const isSelected = prev.some(f => f.path === file.path);
-      if (isSelected) {
-        return prev.filter(f => f.path !== file.path);
-      } else {
-        return [...prev, file];
-      }
-    });
-  };
-
+  // ✅ Enhanced validation for generateTestSummaries
   const generateTestSummaries = async () => {
     if (selectedFiles.length === 0) {
       setError('Please select at least one file');
+      return;
+    }
+
+    if (selectedFiles.length > 10) {
+      setError('Please select no more than 10 files to avoid AI token limits');
       return;
     }
 
@@ -115,16 +92,24 @@ export const useTestCaseFlow = () => {
       };
 
       const response = await ApiService.api.post('/repositories/generate-summaries', payload);
-      setTestSummaries(response.data.summaries || []);
+      const summaries = response.data.summaries || response.data || [];
+      
+      if (!Array.isArray(summaries) || summaries.length === 0) {
+        throw new Error('No test summaries were generated. The AI might not have found suitable test cases for these files.');
+      }
+
+      setTestSummaries(summaries);
       setCurrentStep(4);
     } catch (err) {
       console.error(err);
-      setError('Failed to generate test summaries');
+      const errorMsg = err.response?.data?.error || err.message || 'Failed to generate test summaries';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ Enhanced validation for generateTestCode
   const generateTestCode = async (summary) => {
     try {
       setSelectedSummary(summary);
@@ -140,16 +125,24 @@ export const useTestCaseFlow = () => {
       };
 
       const response = await ApiService.api.post('/repositories/generate-code', payload);
-      setGeneratedCode(response.data.code || response.data);
+      const code = response.data.code || response.data;
+      
+      if (!code || typeof code !== 'string') {
+        throw new Error('Invalid test code generated');
+      }
+
+      setGeneratedCode(code);
       setCurrentStep(5);
     } catch (err) {
       console.error(err);
-      setError('Failed to generate test code');
+      const errorMsg = err.response?.data?.error || err.message || 'Failed to generate test code';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ Enhanced createPullRequest with better success feedback
   const createPullRequest = async () => {
     try {
       setLoading(true);
@@ -169,17 +162,55 @@ export const useTestCaseFlow = () => {
 
       const response = await ApiService.api.post('/repositories/create-pr', payload);
       const prUrl = response.data.prUrl || response.data.html_url || response.data.url;
-      alert(`Pull Request created successfully! ${prUrl}`);
+      
+      if (prUrl) {
+        alert(`🎉 Pull Request created successfully!\n\nView it here: ${prUrl}`);
+      } else {
+        alert('✅ Pull Request created successfully!');
+      }
     } catch (err) {
       console.error(err);
-      setError('Failed to create pull request');
+      const errorMsg = err.response?.data?.error || err.message || 'Failed to create pull request';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ Keep all your existing functions: handleRepoSelect, handleFileToggle, etc.
+  const handleRepoSelect = async (repo) => {
+    try {
+      setSelectedRepo(repo);
+      setLoading(true);
+      setError('');
+
+      const [owner, repoName] = repo.full_name.split('/');
+      const repoFiles = await ApiService.getRepositoryFiles(owner, repoName);
+
+      setFiles(repoFiles);
+      setCurrentStep(3);
+    } catch (error) {
+      console.error(error);
+      const errorMsg = error.response?.data?.error || error.message || 'Failed to load repository files';
+      setError(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFileToggle = (file) => {
+    setSelectedFiles(prev => {
+      const isSelected = prev.some(f => f.path === file.path);
+      if (isSelected) {
+        return prev.filter(f => f.path !== file.path);
+      } else {
+        return [...prev, file];
+      }
+    });
+  };
+
   return {
-    // State
+    // State - keep exactly as you have
     repositories,
     selectedRepo,
     files,
@@ -191,7 +222,7 @@ export const useTestCaseFlow = () => {
     authenticated,
     currentStep,
     error,
-    // Actions
+    // Actions - keep exactly as you have
     setSelectedFiles,
     handleRepoSelect,
     handleFileToggle,
