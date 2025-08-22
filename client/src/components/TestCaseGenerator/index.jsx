@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Github, CheckSquare } from 'lucide-react';
-import ApiService from '../../services/ApiService';
+import React from 'react';
+import { Github } from 'lucide-react';
 import ProgressSteps from './ProgressSteps';
 import AuthSection from './AuthSection';
 import RepositoryList from './RepositoryList';
@@ -13,7 +12,6 @@ import { useTestCaseFlow } from '../../hooks/useTestCaseFlow';
 
 const TestCaseGenerator = () => {
   const {
-    // State
     repositories,
     selectedRepo,
     files,
@@ -25,7 +23,6 @@ const TestCaseGenerator = () => {
     authenticated,
     currentStep,
     error,
-    // Actions
     setSelectedFiles,
     handleRepoSelect,
     handleFileToggle,
@@ -33,25 +30,32 @@ const TestCaseGenerator = () => {
     generateTestCode,
     createPullRequest,
     startGitHubOAuth,
-    setError
   } = useTestCaseFlow();
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-blue-50 p-4 md:p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 bg-blue-600 rounded-lg">
+        <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-md p-4 md:p-6 border border-gray-100">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            
+            {/* Logo + Title */}
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-blue-600 rounded-xl shadow-sm">
                 <Github className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Test Case Generator</h1>
-                <p className="text-gray-600">Generate automated test cases for your GitHub repositories</p>
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+                  Test Case Generator
+                </h1>
+                <p className="text-sm md:text-base text-gray-600">
+                  Generate automated test cases for your GitHub repositories
+                </p>
               </div>
             </div>
 
+            {/* Auth */}
             <AuthSection 
               authenticated={authenticated}
               onStartOAuth={startGitHubOAuth}
@@ -59,48 +63,52 @@ const TestCaseGenerator = () => {
           </div>
         </div>
 
-        {/* Progress Steps */}
-        <ProgressSteps currentStep={currentStep} authenticated={authenticated} />
+        {/* Progress */}
+        <div className="bg-white/90 backdrop-blur-md rounded-xl shadow-sm p-3 md:p-5 border border-gray-100">
+          <ProgressSteps currentStep={currentStep} authenticated={authenticated} />
+        </div>
 
-        {/* Error Display */}
+        {/* Error */}
         <ErrorDisplay error={error} />
 
-        {/* Step-based Content */}
-        {currentStep === 2 && (
-          <RepositoryList 
-            repositories={repositories}
-            onRepoSelect={handleRepoSelect}
-          />
-        )}
+        {/* Steps */}
+        <div className="bg-white rounded-2xl shadow-sm p-4 md:p-6 border border-gray-100">
+          {currentStep === 2 && (
+            <RepositoryList 
+              repositories={repositories}
+              onRepoSelect={handleRepoSelect}
+            />
+          )}
 
-        {currentStep === 3 && (
-          <FileSelector
-            selectedRepo={selectedRepo}
-            files={files}
-            selectedFiles={selectedFiles}
-            onFileToggle={handleFileToggle}
-            onGenerateTestSummaries={generateTestSummaries}
-            loading={loading}
-          />
-        )}
+          {currentStep === 3 && (
+            <FileSelector
+              selectedRepo={selectedRepo}
+              files={files}
+              selectedFiles={selectedFiles}
+              onFileToggle={handleFileToggle}
+              onGenerateTestSummaries={generateTestSummaries}
+              loading={loading}
+            />
+          )}
 
-        {currentStep === 4 && (
-          <TestSummaryList
-            testSummaries={testSummaries}
-            onGenerateTestCode={generateTestCode}
-          />
-        )}
+          {currentStep === 4 && (
+            <TestSummaryList
+              testSummaries={testSummaries}
+              onGenerateTestCode={generateTestCode}
+            />
+          )}
 
-        {currentStep === 5 && (
-          <CodeGeneration
-            generatedCode={generatedCode}
-            selectedSummary={selectedSummary}
-            onCreatePullRequest={createPullRequest}
-            loading={loading}
-          />
-        )}
+          {currentStep === 5 && (
+            <CodeGeneration
+              generatedCode={generatedCode}
+              selectedSummary={selectedSummary}
+              onCreatePullRequest={createPullRequest}
+              loading={loading}
+            />
+          )}
+        </div>
 
-        {/* Loading Overlay */}
+        {/* Loading */}
         <LoadingOverlay loading={loading} currentStep={currentStep} />
       </div>
     </div>
