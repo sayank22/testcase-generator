@@ -37,11 +37,11 @@ Connect your GitHub account and browse repositories with all code files displaye
 
 - **Interactive UI:**  
   Preview generated test code before finalizing.
-
-  - **Pull Request Automation:**  
+  
+- **Pull Request Automation:**  
   Create a new branch and open a GitHub pull request with the generated test cases in just one click.
 
-  - **Seamless Workflow:**  
+- **Seamless Workflow:**  
   Simplifies testing by combining AI-driven test creation with direct GitHub collaboration.
 
 
@@ -74,7 +74,7 @@ Axios for GitHub + AI API integration
 
 ## 🌐 Live Links
 
-**🔗 Frontend: testcase-generator-sayan-kundu.vercel.app**
+**🔗 Frontend: https://testcase-generator-sayan-kundu.vercel.app**
 **🔗 Backend API: https://jivaka-backend.onrender.com**
 
 ---
@@ -126,4 +126,4 @@ See it live: [testcase-generator-sayan-kundu.vercel.app](testcase-generator-saya
 
 ![Desktop Demo 1](client/src/assets/1.png)
 
-![Desktop Demo 2](client/src/assets/2..png)
+![Desktop Demo 2](client/src/assets/2.png)
